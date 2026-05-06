@@ -52,6 +52,14 @@ EOF
     # Set defaults if empty
     NOTIFICATIONS=${NOTIFICATIONS:-true}
     BACKUP_PATH=${BACKUP_PATH:-$HOME/docker-backups}
+    if ! command -v docker &>/dev/null; then
+        echo -e "${RED}❌ Docker no encontrado. Instala Docker primero.${NC}"
+        exit 1
+    fi
+    if ! docker info &>/dev/null 2>&1; then
+        echo -e "${RED}❌ Docker daemon no está corriendo.${NC}"
+        exit 1
+    fi
 }
 
 log_action() {
@@ -62,7 +70,7 @@ notify() {
     if [ "$NOTIFICATIONS" = true ] && command -v powershell.exe &>/dev/null; then
         local title=$(escape_ps_string "$1")
         local text=$(escape_ps_string "$2")
-        powershell.exe -Command "& {Add-Type -AssemblyName System.Windows.Forms; \`$notification = New-Object System.Windows.Forms.NotifyIcon; \`$notification.Icon = [System.Drawing.SystemIcons]::Information; \`$notification.BalloonTipTitle = '$title'; \`$notification.BalloonTipText = '$text'; \`$notification.Visible = \`$true; \`$notification.ShowBalloonTip(3000)}" 2>/dev/null
+        powershell.exe -Command "& {Add-Type -AssemblyName System.Windows.Forms; \`\$notification = New-Object System.Windows.Forms.NotifyIcon; \`\$notification.Icon = [System.Drawing.SystemIcons]::Information; \`\$notification.BalloonTipTitle = '$title'; \`\$notification.BalloonTipText = '$text'; \`\$notification.Visible = \`\$true; \`\$notification.ShowBalloonTip(3000)}" 2>/dev/null
     fi
 }
 
@@ -112,7 +120,7 @@ start_project() {
         echo -e "${GREEN}✅ Todos los contenedores ya están activos${NC}"
     else
         echo -e "${YELLOW}⏳ Iniciando proyecto $project...${NC}"
-        echo "$containers" | while read c; do [ -n "$c" ] && docker start "$c" >/dev/null 2>&1 && echo "  🚀 $c"; done
+        echo "$containers" | while IFS= read -r c; do [ -n "$c" ] && docker start "$c" >/dev/null 2>&1 && echo "  🚀 $c"; done
         echo -e "${GREEN}✅ Proyecto $project iniciado${NC}"
         log_action "START" "$project"
         notify "Docker Manager" "Proyecto $project iniciado"
@@ -127,7 +135,7 @@ stop_project() {
         echo -e "${GREEN}✅ Proyecto ya está detenido${NC}"
     else
         echo -e "${YELLOW}⏳ Deteniendo proyecto $project...${NC}"
-        echo "$containers" | while read c; do [ -n "$c" ] && docker stop "$c" >/dev/null 2>&1 && echo "  🛑 $c"; done
+        echo "$containers" | while IFS= read -r c; do [ -n "$c" ] && docker stop "$c" >/dev/null 2>&1 && echo "  🛑 $c"; done
         echo -e "${GREEN}✅ Proyecto $project detenido${NC}"
         log_action "STOP" "$project"
         notify "Docker Manager" "Proyecto $project detenido"
@@ -139,7 +147,6 @@ restart_project() {
     stop_project "$1"
     sleep 1
     start_project "$1"
-    log_action "RESTART" "$1"
 }
 
 remove_project() {
@@ -150,7 +157,7 @@ remove_project() {
     if [ "$confirm" = "ELIMINAR" ]; then
         local ids=$(docker ps -a --filter "name=${pattern}" -q 2>/dev/null)
         if [ -n "$ids" ]; then
-            docker rm -f $ids 2>/dev/null
+            echo "$ids" | xargs docker rm -f 2>/dev/null
         fi
         echo -e "${GREEN}✅ Proyecto $1 eliminado${NC}"
         log_action "REMOVE" "$1"
@@ -161,7 +168,7 @@ logs_project() {
     local pattern=$(get_project_pattern "$1")
     clear
     echo -e "${BLUE}═══════════════ LOGS DE $1 ═══════════════${NC}"
-    docker ps -a --filter "name=${pattern}" --format "{{.Names}}" 2>/dev/null | while read c; do
+    docker ps -a --filter "name=${pattern}" --format "{{.Names}}" 2>/dev/null | while IFS= read -r c; do
         [ -n "$c" ] && echo -e "\n${CYAN}━━━ $c ━━━${NC}" && docker logs --tail=30 "$c" 2>/dev/null
     done
     read -p "Presiona Enter..."
@@ -180,10 +187,10 @@ show_project_ports() {
     local pattern=$(get_project_pattern "$1")
     clear
     echo -e "${BLUE}═══════════════ PUERTOS DE $1 ═══════════════${NC}"
-    docker ps --filter "name=${pattern}" --format "{{.Names}}" 2>/dev/null | while read c; do
+    docker ps --filter "name=${pattern}" --format "{{.Names}}" 2>/dev/null | while IFS= read -r c; do
         if [ -n "$c" ]; then
             echo -e "\n${GREEN}📦 $c${NC}"
-            docker port "$c" 2>/dev/null | while read p; do
+            docker port "$c" 2>/dev/null | while IFS= read -r p; do
                 url=$(echo "$p" | sed 's/0.0.0.0:/http:\/\/localhost:/' | sed 's/->.*//')
                 echo "  🔗 $p"
                 [[ "$url" == http* ]] && echo "     📎 ${GREEN}$url${NC}"
@@ -209,7 +216,7 @@ change_restart_policy() {
         4) new="on-failure" ;;
         *) return ;;
     esac
-    docker ps -a --filter "name=${pattern}" --format "{{.Names}}" 2>/dev/null | while read c; do
+    docker ps -a --filter "name=${pattern}" --format "{{.Names}}" 2>/dev/null | while IFS= read -r c; do
         [ -n "$c" ] && docker update --restart="$new" "$c" >/dev/null 2>&1 && echo "  ✓ $c → $new"
     done
     echo -e "${GREEN}✅ Política actualizada${NC}"
@@ -222,7 +229,7 @@ backup_project() {
     mkdir -p "$backup_path"
     local ts=$(date '+%Y%m%d_%H%M%S')
     echo -e "${YELLOW}💾 Backup de $1...${NC}"
-    docker ps -a --filter "name=${pattern}" --format "{{.Names}}" 2>/dev/null | while read c; do
+    docker ps -a --filter "name=${pattern}" --format "{{.Names}}" 2>/dev/null | while IFS= read -r c; do
         [ -n "$c" ] && docker inspect "$c" > "$backup_path/${c}_$ts.json" && echo "  ✓ $c"
     done
     echo -e "${GREEN}✅ Backup en: $backup_path${NC}"
@@ -244,6 +251,12 @@ open_in_browser() {
 
 compose_project() {
     local project=$1
+    local compose_cmd
+    if command -v docker-compose &>/dev/null; then
+        compose_cmd="docker-compose"
+    else
+        compose_cmd="docker compose"
+    fi
     local paths=("$HOME/proyectos/$project" "$HOME/$project" "$HOME/docker/$project")
     for path in "${paths[@]}"; do
         if [ -f "$path/docker-compose.yml" ]; then
@@ -252,10 +265,10 @@ compose_project() {
             echo "  1) up -d   2) down   3) restart   4) logs   0) Salir"
             read -p "Opción: " opt
             case $opt in
-                1) docker-compose up -d ;;
-                2) docker-compose down ;;
-                3) docker-compose restart ;;
-                4) docker-compose logs --tail=50 ;;
+                1) $compose_cmd up -d ;;
+                2) $compose_cmd down ;;
+                3) $compose_cmd restart ;;
+                4) $compose_cmd logs --tail=50 ;;
             esac
             log_action "COMPOSE" "$project"
             read -p "Presiona Enter..."
@@ -307,7 +320,7 @@ manage_projects() {
         echo ""
         
         local index=1
-        declare -a projects_list
+        local -a projects_list
         while IFS= read -r p; do
             if [ -n "$p" ]; then
                 projects_list[$index]="$p"
@@ -421,7 +434,7 @@ add_favorite() {
 
 remove_favorite() {
     read -p "Nombre del proyecto: " project
-    sed -i "\|^${project}$|d" "$FAVORITES_FILE"
+    grep -Fxv "$project" "$FAVORITES_FILE" > "${FAVORITES_FILE}.tmp" && mv "${FAVORITES_FILE}.tmp" "$FAVORITES_FILE"
     echo -e "${GREEN}✅ Eliminado${NC}"
 }
 
@@ -438,7 +451,7 @@ search_containers() {
     read -p "Buscar: " term
     echo ""
     echo -e "${CYAN}Resultados:${NC}"
-    docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null | grep -i --color=always "$term" || echo "  No encontrado"
+    docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null | grep -iF --color=always "$term" || echo "  No encontrado"
     read -p "Presiona Enter..."
 }
 
@@ -464,16 +477,25 @@ quick_actions() {
     case $opt in
         1)
             read -p "¿Detener TODOS? (SI/no): " c
-            [[ "$c" = "SI" ]] && docker stop $(docker ps -q) 2>/dev/null && echo "✅ Detenidos"
+            if [[ "$c" = "SI" ]]; then
+                ids=$(docker ps -q 2>/dev/null); [ -n "$ids" ] && docker stop $ids 2>/dev/null
+                echo "✅ Detenidos"
+            fi
             ;;
         2)
-            docker start $(docker ps -a --filter "status=exited" -q) 2>/dev/null && echo "✅ Iniciados"
+            ids=$(docker ps -a --filter "status=exited" -q 2>/dev/null)
+            if [ -n "$ids" ]; then
+                docker start $ids 2>/dev/null
+                echo "✅ Iniciados"
+            else
+                echo "No hay contenedores detenidos"
+            fi
             ;;
         3)
             read -p "Escribe 'CONFIRMAR': " c
             if [ "$c" = "CONFIRMAR" ]; then
-                docker stop $(docker ps -q) 2>/dev/null
-                docker ps -a -q | while read id; do
+                ids=$(docker ps -q 2>/dev/null); [ -n "$ids" ] && docker stop $ids 2>/dev/null
+                docker ps -a -q | while IFS= read -r id; do
                     docker update --restart=no "$id" 2>/dev/null
                 done
                 echo -e "${GREEN}✅ Todo detenido y auto-inicio desactivado${NC}"
@@ -499,7 +521,7 @@ global_status() {
     echo -e " 📦 Total:     $(docker ps -a -q 2>/dev/null | wc -l)"
     echo ""
     echo -e "${CYAN}🎯 Proyectos:${NC}"
-    get_projects | while read p; do
+    get_projects | while IFS= read -r p; do
         local pattern=$(get_project_pattern "$p")
         local total=$(docker ps -a --filter "name=${pattern}" -q 2>/dev/null | wc -l)
         local running=$(docker ps --filter "name=${pattern}" -q 2>/dev/null | wc -l)
@@ -571,8 +593,8 @@ stop_all_forever() {
     echo ""
     read -p "Escribe 'CONFIRMAR': " confirm
     if [ "$confirm" = "CONFIRMAR" ]; then
-        docker stop $(docker ps -q) 2>/dev/null
-        docker ps -a -q | while read id; do
+        ids=$(docker ps -q 2>/dev/null); [ -n "$ids" ] && docker stop $ids 2>/dev/null
+        docker ps -a -q | while IFS= read -r id; do
             docker update --restart=no "$id" 2>/dev/null
         done
         echo -e "${GREEN}✅ ¡Completado! Los contenedores NO se iniciarán solos${NC}"

@@ -10,7 +10,7 @@ Versión ligera para gestión estándar de proyectos Docker.
 
 **Funcionalidades:**
 - 📦 **Gestión por proyectos** - Detecta proyectos automáticamente (prefijos con `_` o `-`)
-- 🟢 **Iniciar/D牙周炎etener/Reiniciar** contenedores por proyecto
+- 🟢 **Iniciar/Detener/Reiniciar** contenedores por proyecto
 - 🗑️ **Eliminar** proyectos completos (con confirmación)
 - 📋 **Ver logs** (últimas 30 líneas)
 - 📊 **Estado detallado** (contenedores, imágenes, uso de recursos)
@@ -83,7 +83,7 @@ chmod +x docker-ultimate-manager.sh
 
 - Docker instalado y en ejecución
 - Bash 4+
-- `docker-compose` (opcional, para función de compose)
+- `docker compose` (plugin moderno) o `docker-compose` (legacy) — opcional, para la función de compose
 
 ## Cómo detecta los proyectos
 
@@ -103,11 +103,15 @@ El script extrae el nombre del proyecto usando el primer segmento del nombre del
 ## Seguridad
 
 La versión `docker-ultimate-manager.sh` incluye las siguientes mejoras de seguridad:
+- ✅ Validación de Docker instalado y daemon activo al arrancar
 - ✅ Configuración leída sin `source` (previene ejecución de código arbitrario)
-- ✅ Escape de caracteres especiales en regex
-- ✅ Sanitizado de inputs en PowerShell
+- ✅ Inputs de usuario nunca interpolados en expresiones `sed` — se usa `grep -Fxv` (cadena literal)
+- ✅ Búsqueda con `grep -iF` (cadena literal, no regex) para evitar inyección de patrones
+- ✅ Escape de caracteres especiales en nombres de proyecto para filtros Docker
+- ✅ Sanitizado de inputs en PowerShell (notificaciones)
 - ✅ Manejo seguro de directorios con `pushd`/`popd`
-- ✅ `set -uo pipefail` para detección de errores
+- ✅ `set -uo pipefail` para detección de variables no declaradas y errores en pipes
+- ✅ Comprobación de IDs vacíos antes de operaciones masivas (`docker stop/start/rm`)
 
 ## Créditos
 
